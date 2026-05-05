@@ -9,6 +9,7 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import WattseekApi, WattseekApiError, WattseekAuthError
 from .const import DOMAIN
@@ -42,16 +43,19 @@ class WattseekConfigFlow(ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(username.lower())
             self._abort_if_unique_id_configured()
 
-            api = WattseekApi(username, password)
+            session = async_get_clientsession(self.hass)
+            api = WattseekApi(username, password, session=session)
             try:
                 await api.authenticate()
                 plants = await api.get_plants()
-            except WattseekAuthError:
+            except WattseekAuthError as err:
+                _LOGGER.error("Wattseek auth error: %s", err)
                 errors["base"] = "invalid_auth"
-            except WattseekApiError:
+            except WattseekApiError as err:
+                _LOGGER.error("Wattseek API error: %s", err)
                 errors["base"] = "cannot_connect"
             except Exception:
-                _LOGGER.exception("Unexpected error")
+                _LOGGER.exception("Unexpected error during Wattseek setup")
                 errors["base"] = "unknown"
             else:
                 plant_name = plants[0]["plantName"] if plants else "Wattseek"
