@@ -35,16 +35,25 @@ class WattseekApi:
         self._password = password
         self._session = session
         self._own_session = session is None
-        self._authenticated = False
+        self._token: str | None = None
 
     async def _ensure_session(self) -> aiohttp.ClientSession:
         """Ensure we have an aiohttp session."""
         if self._session is None or self._session.closed:
-            jar = aiohttp.CookieJar()
-            self._session = aiohttp.ClientSession(cookie_jar=jar)
+            self._session = aiohttp.ClientSession()
             self._own_session = True
-            self._authenticated = False
+            self._token = None
         return self._session
+
+    def _headers(self) -> dict[str, str]:
+        """Build common request headers."""
+        hdrs: dict[str, str] = {
+            "x-locale": "en-US",
+            "x-org-id": "",
+        }
+        if self._token:
+            hdrs["x-auth-token"] = self._token
+        return hdrs
 
     async def authenticate(self) -> bool:
         """Authenticate with the Wattseek API."""
@@ -60,15 +69,22 @@ class WattseekApi:
         }
 
         try:
-            async with session.post(API_LOGIN, json=payload) as resp:
+            async with session.post(
+                API_LOGIN, json=payload, headers=self._headers()
+            ) as resp:
                 data = await resp.json()
 
-                if data.get("code") != "000200":
-                    msg = data.get("msg", "Unknown error")
-                    _LOGGER.error("Wattseek login failed: %s", msg)
+                status = data.get("status")
+                if status != 0:
+                    msg = data.get("message") or data.get("msg", "Unknown error")
+                    _LOGGER.error("Wattseek login failed: %s (status=%s)", msg, status)
                     raise WattseekAuthError(f"Login failed: {msg}")
 
-                self._authenticated = True
+                result = data.get("data", {})
+                self._token = result.get("token")
+                if not self._token:
+                    raise WattseekAuthError("Login succeeded but no token returned")
+
                 _LOGGER.debug("Wattseek authentication successful")
                 return True
         except aiohttp.ClientError as err:
@@ -80,25 +96,32 @@ class WattseekApi:
         """Make an authenticated API request."""
         session = await self._ensure_session()
 
-        if not self._authenticated:
+        if not self._token:
             await self.authenticate()
+
+        kwargs.setdefault("headers", {})
+        kwargs["headers"].update(self._headers())
 
         try:
             async with session.request(method, url, **kwargs) as resp:
                 data = await resp.json()
 
+                status = data.get("status")
+
                 # Session expired — re-auth once
-                if data.get("code") in ("000401", "000403"):
+                if status == 401:
                     _LOGGER.debug("Session expired, re-authenticating")
-                    self._authenticated = False
+                    self._token = None
                     await self.authenticate()
+                    kwargs["headers"].update(self._headers())
                     async with session.request(method, url, **kwargs) as resp2:
                         data = await resp2.json()
+                        status = data.get("status")
 
-                if data.get("code") != "000200":
-                    raise WattseekApiError(
-                        f"API error {data.get('code')}: {data.get('msg')}"
-                    )
+                if status != 0:
+                    code = data.get("code", "")
+                    msg = data.get("message") or data.get("msg", "Unknown error")
+                    raise WattseekApiError(f"API error (status={status}, code={code}): {msg}")
 
                 return data.get("data", {})
         except aiohttp.ClientError as err:
@@ -141,7 +164,7 @@ class WattseekApi:
             barType="REALTIME_INFO,BASE_INFO",
         )
 
-    # ── Realtime plant statistics ────────────────────────────────────────────
+    # ── Realtime plant statistics ──────────────────────────────────────────────
 
     async def get_plant_flow(self, plant_id: str) -> dict[str, Any]:
         """Get realtime power flow for a plant."""
@@ -173,7 +196,7 @@ class WattseekApi:
             f"statistic/realtime/plant/{plant_id}/grid"
         )
 
-    # ── Device realtime flow ─────────────────────────────────────────────────
+    # ── Device realtime flow ───────────────────────────────────────────────────
 
     async def get_device_flow(self, device_id: str) -> dict[str, Any]:
         """Get realtime power flow for a device."""
