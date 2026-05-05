@@ -1,0 +1,12 @@
+{
+  "domain": "wattseek",
+  "name": "Wattseek Solar",
+  "codeowners": ["@dimangord"],
+  "config_flow": true,
+  "documentation": "https://github.com/dimangord/ha-wattseek",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/dimangord/ha-wattseek/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}
