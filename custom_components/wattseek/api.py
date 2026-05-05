@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import Any
 
@@ -49,10 +50,13 @@ class WattseekApi:
         """Authenticate with the Wattseek API."""
         session = await self._ensure_session()
 
+        password_md5 = hashlib.md5(
+            self._password.encode("utf-8")
+        ).hexdigest()
+
         payload = {
             "username": self._username.strip(),
-            "password": self._password,
-            "captchaVerification": "",
+            "password": password_md5,
         }
 
         try:
@@ -110,7 +114,7 @@ class WattseekApi:
         url = f"{API_PROXY}/{path}"
         return await self._request("POST", url, json=payload)
 
-    # -- Plant endpoints --
+    # ── Plant endpoints ──────────────────────────────────────────────────────
 
     async def get_plants(self) -> list[dict[str, Any]]:
         """Get list of plants."""
@@ -121,7 +125,7 @@ class WattseekApi:
         """Get single plant info."""
         return await self._get(f"plant/{plant_id}")
 
-    # -- Device endpoints --
+    # ── Device endpoints ─────────────────────────────────────────────────────
 
     async def get_devices(self, plant_id: str) -> list[dict[str, Any]]:
         """Get list of devices for a plant."""
@@ -137,7 +141,7 @@ class WattseekApi:
             barType="REALTIME_INFO,BASE_INFO",
         )
 
-    # -- Realtime plant statistics --
+    # ── Realtime plant statistics ────────────────────────────────────────────
 
     async def get_plant_flow(self, plant_id: str) -> dict[str, Any]:
         """Get realtime power flow for a plant."""
@@ -169,7 +173,7 @@ class WattseekApi:
             f"statistic/realtime/plant/{plant_id}/grid"
         )
 
-    # -- Device realtime flow --
+    # ── Device realtime flow ─────────────────────────────────────────────────
 
     async def get_device_flow(self, device_id: str) -> dict[str, Any]:
         """Get realtime power flow for a device."""
@@ -177,7 +181,7 @@ class WattseekApi:
             f"statistic/realtime/device/{device_id}/flow"
         )
 
-    # -- Cleanup --
+    # ── Cleanup ──────────────────────────────────────────────────────────
 
     async def close(self) -> None:
         """Close the session."""
