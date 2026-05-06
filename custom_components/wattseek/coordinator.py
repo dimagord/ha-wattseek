@@ -69,7 +69,33 @@ class WattseekCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
                     if device_type == "INVERTER":
                         detail = await self.api.get_device_detail(device_id)
+                        _LOGGER.debug(
+                            "Device %s detail response keys: %s",
+                            device_id,
+                            list(detail.keys()) if isinstance(detail, dict) else type(detail),
+                        )
                         attrs = self._parse_device_attrs(detail)
+                        _LOGGER.debug(
+                            "Device %s parsed attrs: %s",
+                            device_id,
+                            list(attrs.keys()) if attrs else "EMPTY",
+                        )
+                        if not attrs and isinstance(detail, dict):
+                            # Log raw structure to help debug
+                            for k, v in detail.items():
+                                if isinstance(v, list) and v:
+                                    _LOGGER.debug(
+                                        "Device detail key '%s': list of %d items, first item keys: %s",
+                                        k, len(v),
+                                        list(v[0].keys()) if isinstance(v[0], dict) else type(v[0]),
+                                    )
+                                elif isinstance(v, dict):
+                                    _LOGGER.debug(
+                                        "Device detail key '%s': dict with keys: %s",
+                                        k, list(v.keys()),
+                                    )
+                                else:
+                                    _LOGGER.debug("Device detail key '%s': %s", k, repr(v)[:200])
                         result["devices"][device_id] = {
                             "info": device,
                             "attrs": attrs,
