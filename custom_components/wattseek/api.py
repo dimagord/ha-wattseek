@@ -90,6 +90,31 @@ class WattseekApi:
         except aiohttp.ClientError as err:
             raise WattseekApiError(f"Connection error: {err}") from err
 
+    @staticmethod
+    def _is_success(data: dict[str, Any]) -> bool:
+        """Check if API response indicates success.
+
+        Login endpoint returns {status: 0, data: ...}.
+        Proxy API returns {code: "000200", data: ...}.
+        """
+        status = data.get("status")
+        if status == 0:
+            return True
+        code = str(data.get("code", ""))
+        if code == "000200":
+            return True
+        return False
+
+    @staticmethod
+    def _is_session_expired(data: dict[str, Any]) -> bool:
+        """Check if the response indicates an expired session."""
+        if data.get("status") == 401:
+            return True
+        code = str(data.get("code", ""))
+        if code in ("010002", "010003", "401"):
+            return True
+        return False
+
     async def _request(
         self, method: str, url: str, **kwargs: Any
     ) -> dict[str, Any]:
@@ -106,22 +131,22 @@ class WattseekApi:
             async with session.request(method, url, **kwargs) as resp:
                 data = await resp.json()
 
-                status = data.get("status")
-
                 # Session expired — re-auth once
-                if status == 401:
+                if self._is_session_expired(data):
                     _LOGGER.debug("Session expired, re-authenticating")
                     self._token = None
                     await self.authenticate()
                     kwargs["headers"].update(self._headers())
                     async with session.request(method, url, **kwargs) as resp2:
                         data = await resp2.json()
-                        status = data.get("status")
 
-                if status != 0:
+                if not self._is_success(data):
                     code = data.get("code", "")
+                    status = data.get("status")
                     msg = data.get("message") or data.get("msg", "Unknown error")
-                    raise WattseekApiError(f"API error (status={status}, code={code}): {msg}")
+                    raise WattseekApiError(
+                        f"API error (status={status}, code={code}): {msg}"
+                    )
 
                 return data.get("data", {})
         except aiohttp.ClientError as err:
@@ -164,7 +189,7 @@ class WattseekApi:
             barType="REALTIME_INFO,BASE_INFO",
         )
 
-    # ── Realtime plant statistics ──────────────────────────────────────────────
+    # ── Realtime plant statistics ──────────────────────────────────────────
 
     async def get_plant_flow(self, plant_id: str) -> dict[str, Any]:
         """Get realtime power flow for a plant."""
@@ -196,7 +221,7 @@ class WattseekApi:
             f"statistic/realtime/plant/{plant_id}/grid"
         )
 
-    # ── Device realtime flow ───────────────────────────────────────────────────
+    # ── Device realtime flow ─────────────────────────────────────────────────
 
     async def get_device_flow(self, device_id: str) -> dict[str, Any]:
         """Get realtime power flow for a device."""
